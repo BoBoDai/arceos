@@ -1,16 +1,20 @@
 #![cfg_attr(feature = "axstd", no_std)]
 #![cfg_attr(feature = "axstd", no_main)]
+#![feature(asm_const)]
 
 use core::{u32, usize};
 #[cfg(feature = "axstd")]
 use axstd::println;
 
 const PLASH_START: usize = 0xffff_ffc0_2200_0000;
+const RUN_START: usize = 0xffff_ffc0_8010_0000;
 const IMAGE_HEADER_SIZE: usize = 16;
 
 #[cfg_attr(feature = "axstd", no_mangle)]
 fn main() {
     let apps_start = PLASH_START as *const u8;
+    let run_start = RUN_START;
+
     let header_size = IMAGE_HEADER_SIZE;
     let header = unsafe { core::slice::from_raw_parts(apps_start, header_size) };
     let apps_num = &header[0..2];
@@ -23,9 +27,25 @@ fn main() {
         let app_size = &header[start..end];
         let app_size = u32::from_be_bytes([app_size[0], app_size[1], app_size[2], app_size[3]]);
         println!("Load payload ...");
-        let code = unsafe { core::slice::from_raw_parts(apps_start.add(header_size + offset), app_size as usize) };
+        let load_code = unsafe { core::slice::from_raw_parts(apps_start.add(header_size + offset), app_size as usize) };
+        println!("load code {:?}; address [{:?}]", load_code, load_code.as_ptr());
+        let run_code = unsafe {
+            core::slice::from_raw_parts_mut((run_start + offset) as *mut u8, app_size as usize)
+        };
+        run_code.copy_from_slice(load_code);
+        println!("run code {:?}; address [{:?}]", run_code, run_code.as_ptr());
         offset += app_size as usize;
-        println!("content: {:?}: ", code);
     }
+
     println!("Load payload ok!");
+
+    println!("Execute app ...");
+
+    // execute app
+    unsafe { core::arch::asm!("
+        li      t2, {run_start}
+        jalr    t2
+        j       .",
+    run_start = const RUN_START,
+    )}
 }
