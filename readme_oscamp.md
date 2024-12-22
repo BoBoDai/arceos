@@ -1,0 +1,1 @@
+在arceos目录下执行 make run 即可运行
